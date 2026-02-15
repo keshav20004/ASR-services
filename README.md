@@ -125,20 +125,7 @@ ASR/
 - **Animations:** Particle canvas, slide-up reveals, hover effects, pulse glows
 - **Typography:** Inter (body) + Outfit (headings) from Google Fonts
 
----
 
-## 📸 Screenshots
-
-### Landing Page
-> Animated particle canvas with role selection cards and stats counter
-
-### Recruiter Dashboard
-> KPI cards, Chart.js analytics, job listings with applicant management
-
-### Job Seeker Dashboard
-> Search & filter jobs, apply with cover letter, track application status
-
----
 
 ## 📄 License
 
