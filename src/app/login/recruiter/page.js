@@ -153,7 +153,7 @@ export default function RecruiterLogin() {
                             🏢
                         </div>
                         <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '6px' }}>
-                            {isSignup ? 'Create Recruiter Account' : 'Recruiter Login'}
+                            {isSignup ? 'Create Employer Account' : 'Employer Login'}
                         </h1>
                         <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
                             {isSignup
