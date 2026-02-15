@@ -1,14 +1,12 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { seedIfNeeded } from '@/lib/store';
 import WhatsAppButton from '@/components/WhatsAppButton';
 
 export default function Home() {
     const canvasRef = useRef(null);
 
     useEffect(() => {
-        seedIfNeeded();
 
         // Particle animation
         const canvas = canvasRef.current;

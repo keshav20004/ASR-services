@@ -21,6 +21,7 @@ build/
 npm-debug.log*
 
 # env
+.env
 .env*.local
 
 # vercel

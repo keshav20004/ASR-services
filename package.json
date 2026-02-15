@@ -8,9 +8,11 @@
     "start": "next start"
   },
   "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "chart.js": "^4.5.1",
     "next": "^15.1.0",
+    "prisma": "^5.22.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "chart.js": "^4.5.1"
+    "react-dom": "^19.0.0"
   }
 }

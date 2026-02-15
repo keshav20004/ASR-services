@@ -4,14 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '@/components/Navbar';
 import Modal from '@/components/Modal';
 import WhatsAppButton from '@/components/WhatsAppButton';
-import {
-    getUser,
-    getJobs,
-    addApplication,
-    getApplicationsByUser,
-    hasApplied,
-    seedIfNeeded,
-} from '@/lib/store';
+import { formatSalaryRange } from '@/lib/currencies';
 
 export default function JobSeekerDashboard() {
     const [user, setUserState] = useState(null);
@@ -26,19 +19,33 @@ export default function JobSeekerDashboard() {
     const [selectedJob, setSelectedJob] = useState(null);
     const [coverLetter, setCoverLetter] = useState('');
     const [showJobDetail, setShowJobDetail] = useState(null);
+    const [appliedJobIds, setAppliedJobIds] = useState(new Set());
 
-    const loadData = useCallback(() => {
-        seedIfNeeded();
-        const u = getUser();
-        if (!u || u.role !== 'jobseeker') {
+    const loadData = useCallback(async () => {
+        const stored = localStorage.getItem('asr_user');
+        if (!stored) {
+            window.location.href = '/login/jobseeker';
+            return;
+        }
+        const u = JSON.parse(stored);
+        if (u.role !== 'jobseeker') {
             window.location.href = '/login/jobseeker';
             return;
         }
         setUserState(u);
-        const allJobs = getJobs().filter((j) => j.status === 'active');
-        setJobsList(allJobs);
-        setFilteredJobs(allJobs);
-        setMyApplications(getApplicationsByUser(u.email));
+
+        // Fetch all active jobs
+        const jobsRes = await fetch('/api/jobs');
+        const allJobs = await jobsRes.json();
+        const activeJobs = allJobs.filter((j) => j.status === 'active');
+        setJobsList(activeJobs);
+        setFilteredJobs(activeJobs);
+
+        // Fetch user's applications
+        const appsRes = await fetch(`/api/applications?userEmail=${encodeURIComponent(u.email)}`);
+        const apps = await appsRes.json();
+        setMyApplications(apps);
+        setAppliedJobIds(new Set(apps.map((a) => a.jobId)));
     }, []);
 
     useEffect(() => {
@@ -77,24 +84,30 @@ export default function JobSeekerDashboard() {
         setShowApplyModal(true);
     };
 
-    const submitApplication = (e) => {
+    const submitApplication = async (e) => {
         e.preventDefault();
         if (!selectedJob || !user) return;
 
-        addApplication({
-            jobId: selectedJob.id,
-            jobTitle: selectedJob.title,
-            jobCompany: selectedJob.company,
-            applicantEmail: user.email,
-            applicantName: user.name,
-            applicantSkills: user.skills || '',
-            coverLetter: coverLetter,
+        const res = await fetch('/api/applications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jobId: selectedJob.id,
+                jobTitle: selectedJob.title,
+                jobCompany: selectedJob.company,
+                applicantEmail: user.email,
+                applicantName: user.name,
+                applicantSkills: user.skills || '',
+                coverLetter: coverLetter,
+            }),
         });
 
-        setShowApplyModal(false);
-        setSelectedJob(null);
-        setCoverLetter('');
-        loadData();
+        if (res.ok) {
+            setShowApplyModal(false);
+            setSelectedJob(null);
+            setCoverLetter('');
+            loadData();
+        }
     };
 
     const uniqueTypes = ['all', ...new Set(jobs.map((j) => j.type))];
@@ -218,7 +231,7 @@ export default function JobSeekerDashboard() {
                         ) : (
                             <div className="job-grid animate-slide-up delay-2">
                                 {filteredJobs.map((job) => {
-                                    const applied = hasApplied(job.id, user.email);
+                                    const applied = appliedJobIds.has(job.id);
                                     return (
                                         <div key={job.id} className="glass-card job-card">
                                             <div className="job-card-header">
@@ -234,31 +247,32 @@ export default function JobSeekerDashboard() {
                                             </div>
 
                                             <div className="job-card-salary">
-                                                ${(job.salaryMin / 1000).toFixed(0)}K – $
-                                                {(job.salaryMax / 1000).toFixed(0)}K
+                                                {formatSalaryRange(job.salaryMin, job.salaryMax, job.currency)}
                                             </div>
 
                                             <div className="job-card-desc">{job.description}</div>
 
                                             {/* Requirements */}
-                                            {job.requirements && (
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                                    {job.requirements.split(',').slice(0, 4).map((req, i) => (
-                                                        <span
-                                                            key={i}
-                                                            className="badge badge-pink"
-                                                            style={{ fontSize: '10px' }}
-                                                        >
-                                                            {req.trim()}
-                                                        </span>
-                                                    ))}
-                                                    {job.requirements.split(',').length > 4 && (
-                                                        <span className="badge badge-pink" style={{ fontSize: '10px' }}>
-                                                            +{job.requirements.split(',').length - 4} more
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
+                                            {
+                                                job.requirements && (
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                                        {job.requirements.split(',').slice(0, 4).map((req, i) => (
+                                                            <span
+                                                                key={i}
+                                                                className="badge badge-pink"
+                                                                style={{ fontSize: '10px' }}
+                                                            >
+                                                                {req.trim()}
+                                                            </span>
+                                                        ))}
+                                                        {job.requirements.split(',').length > 4 && (
+                                                            <span className="badge badge-pink" style={{ fontSize: '10px' }}>
+                                                                +{job.requirements.split(',').length - 4} more
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )
+                                            }
 
                                             <div className="job-card-footer">
                                                 <span className="job-card-date">📅 {job.postedDate}</span>
@@ -287,57 +301,59 @@ export default function JobSeekerDashboard() {
                                             </div>
 
                                             {/* Job details expanded */}
-                                            {showJobDetail === job.id && (
-                                                <div
-                                                    style={{
-                                                        borderTop: '1px solid var(--border-glass)',
-                                                        paddingTop: 'var(--gap-md)',
-                                                        animation: 'slideDown 0.3s var(--ease)',
-                                                    }}
-                                                >
-                                                    <h4
+                                            {
+                                                showJobDetail === job.id && (
+                                                    <div
                                                         style={{
-                                                            fontSize: '13px',
-                                                            fontWeight: 600,
-                                                            color: 'var(--text-secondary)',
-                                                            marginBottom: 'var(--gap-sm)',
-                                                            textTransform: 'uppercase',
-                                                            letterSpacing: '0.8px',
+                                                            borderTop: '1px solid var(--border-glass)',
+                                                            paddingTop: 'var(--gap-md)',
+                                                            animation: 'slideDown 0.3s var(--ease)',
                                                         }}
                                                     >
-                                                        Full Description
-                                                    </h4>
-                                                    <p
-                                                        style={{
-                                                            fontSize: '13px',
-                                                            color: 'var(--text-secondary)',
-                                                            lineHeight: 1.7,
-                                                            marginBottom: 'var(--gap-md)',
-                                                        }}
-                                                    >
-                                                        {job.description}
-                                                    </p>
-                                                    <h4
-                                                        style={{
-                                                            fontSize: '13px',
-                                                            fontWeight: 600,
-                                                            color: 'var(--text-secondary)',
-                                                            marginBottom: 'var(--gap-sm)',
-                                                            textTransform: 'uppercase',
-                                                            letterSpacing: '0.8px',
-                                                        }}
-                                                    >
-                                                        Requirements
-                                                    </h4>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                                        {job.requirements.split(',').map((req, i) => (
-                                                            <span key={i} className="badge badge-pink">
-                                                                {req.trim()}
-                                                            </span>
-                                                        ))}
+                                                        <h4
+                                                            style={{
+                                                                fontSize: '13px',
+                                                                fontWeight: 600,
+                                                                color: 'var(--text-secondary)',
+                                                                marginBottom: 'var(--gap-sm)',
+                                                                textTransform: 'uppercase',
+                                                                letterSpacing: '0.8px',
+                                                            }}
+                                                        >
+                                                            Full Description
+                                                        </h4>
+                                                        <p
+                                                            style={{
+                                                                fontSize: '13px',
+                                                                color: 'var(--text-secondary)',
+                                                                lineHeight: 1.7,
+                                                                marginBottom: 'var(--gap-md)',
+                                                            }}
+                                                        >
+                                                            {job.description}
+                                                        </p>
+                                                        <h4
+                                                            style={{
+                                                                fontSize: '13px',
+                                                                fontWeight: 600,
+                                                                color: 'var(--text-secondary)',
+                                                                marginBottom: 'var(--gap-sm)',
+                                                                textTransform: 'uppercase',
+                                                                letterSpacing: '0.8px',
+                                                            }}
+                                                        >
+                                                            Requirements
+                                                        </h4>
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                            {job.requirements.split(',').map((req, i) => (
+                                                                <span key={i} className="badge badge-pink">
+                                                                    {req.trim()}
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            )}
+                                                )
+                                            }
                                         </div>
                                     );
                                 })}
@@ -439,8 +455,7 @@ export default function JobSeekerDashboard() {
                                     marginTop: '8px',
                                 }}
                             >
-                                ${(selectedJob.salaryMin / 1000).toFixed(0)}K – $
-                                {(selectedJob.salaryMax / 1000).toFixed(0)}K
+                                {formatSalaryRange(selectedJob.salaryMin, selectedJob.salaryMax, selectedJob.currency)}
                             </p>
                         </div>
 
@@ -488,10 +503,11 @@ export default function JobSeekerDashboard() {
                             </button>
                         </div>
                     </form>
-                )}
-            </Modal>
+                )
+                }
+            </Modal >
 
             <WhatsAppButton />
-        </div>
+        </div >
     );
 }

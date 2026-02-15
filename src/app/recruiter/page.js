@@ -4,14 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Navbar from '@/components/Navbar';
 import Modal from '@/components/Modal';
 import WhatsAppButton from '@/components/WhatsAppButton';
-import {
-    getUser,
-    getJobs,
-    addJob,
-    deleteJob,
-    getApplicationsByJob,
-    seedIfNeeded,
-} from '@/lib/store';
+import { CURRENCIES, formatSalaryRange } from '@/lib/currencies';
 
 export default function RecruiterDashboard() {
     const [user, setUserState] = useState(null);
@@ -26,28 +19,37 @@ export default function RecruiterDashboard() {
         type: 'Full-time',
         salaryMin: '',
         salaryMax: '',
+        currency: 'INR',
         description: '',
         requirements: '',
     });
     const chartRef = useRef(null);
     const chartInstance = useRef(null);
 
-    const loadData = useCallback(() => {
-        seedIfNeeded();
-        const u = getUser();
-        if (!u || u.role !== 'recruiter') {
+    const loadData = useCallback(async () => {
+        const stored = localStorage.getItem('asr_user');
+        if (!stored) {
+            window.location.href = '/login/recruiter';
+            return;
+        }
+        const u = JSON.parse(stored);
+        if (u.role !== 'recruiter') {
             window.location.href = '/login/recruiter';
             return;
         }
         setUserState(u);
-        const allJobs = getJobs();
-        const myJobs = allJobs.filter((j) => j.postedBy === u.email);
+
+        // Fetch recruiter's jobs
+        const jobsRes = await fetch(`/api/jobs/my?email=${encodeURIComponent(u.email)}`);
+        const myJobs = await jobsRes.json();
         setJobs(myJobs);
 
+        // Fetch applications for each job
         const appMap = {};
-        myJobs.forEach((j) => {
-            appMap[j.id] = getApplicationsByJob(j.id);
-        });
+        for (const job of myJobs) {
+            const appsRes = await fetch(`/api/applications?jobId=${job.id}`);
+            appMap[job.id] = await appsRes.json();
+        }
         setAllApplications(appMap);
     }, []);
 
@@ -126,33 +128,37 @@ export default function RecruiterDashboard() {
         0
     );
 
-    const handlePost = (e) => {
+    const handlePost = async (e) => {
         e.preventDefault();
-        const newJob = {
-            ...form,
-            salaryMin: parseInt(form.salaryMin) || 0,
-            salaryMax: parseInt(form.salaryMax) || 0,
-            postedBy: user.email,
-            company: form.company || user.company,
-        };
-        addJob(newJob);
-        setShowPostModal(false);
-        setForm({
-            title: '',
-            company: '',
-            location: '',
-            type: 'Full-time',
-            salaryMin: '',
-            salaryMax: '',
-            description: '',
-            requirements: '',
+        const res = await fetch('/api/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ...form,
+                postedBy: user.email,
+                company: form.company || user.company,
+            }),
         });
-        loadData();
+        if (res.ok) {
+            setShowPostModal(false);
+            setForm({
+                title: '',
+                company: '',
+                location: '',
+                type: 'Full-time',
+                salaryMin: '',
+                salaryMax: '',
+                currency: 'INR',
+                description: '',
+                requirements: '',
+            });
+            loadData();
+        }
     };
 
-    const handleDelete = (id) => {
+    const handleDelete = async (id) => {
         if (confirm('Delete this job listing?')) {
-            deleteJob(id);
+            await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
             loadData();
         }
     };
@@ -313,7 +319,7 @@ export default function RecruiterDashboard() {
                                 </div>
 
                                 <div className="job-card-salary">
-                                    ${(job.salaryMin / 1000).toFixed(0)}K – ${(job.salaryMax / 1000).toFixed(0)}K
+                                    {formatSalaryRange(job.salaryMin, job.salaryMax, job.currency)}
                                 </div>
 
                                 <div className="job-card-desc">{job.description}</div>
@@ -461,9 +467,25 @@ export default function RecruiterDashboard() {
                                     <option>Internship</option>
                                 </select>
                             </div>
+                            <div className="input-group">
+                                <label>Currency</label>
+                                <select
+                                    className="input-field"
+                                    value={form.currency}
+                                    onChange={(e) => setForm({ ...form, currency: e.target.value })}
+                                >
+                                    {CURRENCIES.map((c) => (
+                                        <option key={c.code} value={c.code}>
+                                            {c.symbol} {c.code} — {c.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="form-grid form-grid-2">
                             <div className="form-grid form-grid-2">
                                 <div className="input-group">
-                                    <label>Min Salary ($)</label>
+                                    <label>Min Salary</label>
                                     <input
                                         className="input-field"
                                         type="number"
@@ -473,7 +495,7 @@ export default function RecruiterDashboard() {
                                     />
                                 </div>
                                 <div className="input-group">
-                                    <label>Max Salary ($)</label>
+                                    <label>Max Salary</label>
                                     <input
                                         className="input-field"
                                         type="number"

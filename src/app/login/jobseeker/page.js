@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { setUser, findUser } from '@/lib/store';
 
 export default function JobSeekerLogin() {
     const [isSignup, setIsSignup] = useState(false);
@@ -14,26 +13,30 @@ export default function JobSeekerLogin() {
         setError('');
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setLoading(true);
 
-        setTimeout(() => {
+        try {
             if (isSignup) {
                 if (!form.email || !form.password || !form.name) {
                     setError('Please fill all required fields');
                     setLoading(false);
                     return;
                 }
-                const user = {
-                    email: form.email,
-                    password: form.password,
-                    name: form.name,
-                    skills: form.skills,
-                    role: 'jobseeker',
-                };
-                setUser(user);
+                const res = await fetch('/api/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...form, role: 'jobseeker' }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    setError(data.error || 'Signup failed');
+                    setLoading(false);
+                    return;
+                }
+                localStorage.setItem('asr_user', JSON.stringify(data));
                 window.location.href = '/jobseeker';
             } else {
                 if (!form.email || !form.password) {
@@ -41,16 +44,29 @@ export default function JobSeekerLogin() {
                     setLoading(false);
                     return;
                 }
-                const user = findUser(form.email, form.password);
-                if (user && user.role === 'jobseeker') {
-                    setUser(user);
-                    window.location.href = '/jobseeker';
-                } else {
-                    setError('Invalid credentials or account not found. Try signing up!');
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: form.email, password: form.password }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    setError(data.error || 'Invalid credentials. Try signing up!');
                     setLoading(false);
+                    return;
                 }
+                if (data.role !== 'jobseeker') {
+                    setError('This account is not a job seeker account.');
+                    setLoading(false);
+                    return;
+                }
+                localStorage.setItem('asr_user', JSON.stringify(data));
+                window.location.href = '/jobseeker';
             }
-        }, 800);
+        } catch (err) {
+            setError('Something went wrong. Please try again.');
+            setLoading(false);
+        }
     };
 
     return (
